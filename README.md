@@ -1,102 +1,117 @@
 # docker-static-website
+Cloud-based Web Application
+CA1: Dockerfile Composition
 
-A very small Docker image (~154KB) to run any static website, based on the [BusyBox httpd](https://www.busybox.net/) static file server.
+By following these simple steps i managed to create the minimalistic Docker container locally hosted and show a simple page hosted on github repository
+as it was required for this assignment
 
-> If you're using the previous version (1.x, based on *thttpd*), I recommend upgrading since the new version (2.x) comes with a much smaller memory footprint.
+## Steps to be follow
 
-For more details, check out [my article](https://lipanski.com/posts/smallest-docker-image-static-website).
-
-## Usage
-
-The image is hosted on [Docker Hub](https://hub.docker.com/r/lipanski/docker-static-website):
-
-```dockerfile
-FROM lipanski/docker-static-website:latest
-
-# Copy your static files
-COPY . .
-```
-
-Build the image:
+it can be seen on the docker file that it has been utized the latest version of alpine wich is 3.16.2 and latest verision of busybox 1.35.0
 
 ```sh
-docker build -t my-static-website .
+FROM alpine:3.16.2 AS builder
+
+RUN apk add gcc musl-dev make perl
+
 ```
 
-Run the image:
+
+# Download busybox sources
+
+in this part busybox is downloaded, uncompressed and moved to busybox
 
 ```sh
-docker run -it --rm -p 3000:3000 my-static-website
-```
 
-Browse to `http://localhost:3000`.
-
-If you need to configure the server in a different way, you can override the `CMD` line:
-
-```dockerfile
-FROM lipanski/docker-static-website:latest
-
-# Copy your static files
-COPY . .
-
-CMD ["/busybox", "httpd", "-f", "-v", "-p", "3000", "-c", "httpd.conf"]
-```
-
-**NOTE:** Sending a `TERM` signal to your TTY running the container won't get propagated due to how busybox is built. Instead you can call `docker stop` (or `docker kill` if can't wait 15 seconds). Alternatively you can run the container with `docker run -it --rm --init` which will propagate signals to the process correctly.
-
-## FAQ
-
-### How can I serve gzipped files?
-
-For every file that should be served gzipped, add a matching `[FILENAME].gz` to your image.
-
-### How can I use httpd as a reverse proxy?
-
-Add a `httpd.conf` file and use the `P` directive:
+RUN wget https://busybox.net/downloads/busybox-1.35.0.tar.bz2 \
+  && tar xf busybox-1.35.0.tar.bz2 \
+  && mv /busybox-1.35.0 /busybox
 
 ```
-P:/some/old/path:[http://]hostname[:port]/some/new/path
-```
 
-### How can I overwrite the default error pages?
+# A new user is created to basically protect the running commands
 
-Add a `httpd.conf` file and use the `E404` directive:
+```sh
 
-```
-E404:e404.html
-```
-
-...where `e404.html` is your custom 404 page.
-
-Note that the error page directive is only processed for your main `httpd.conf` file. It will raise an error if you use it in `httpd.conf` files added to subdirectories.
-
-### How can I implement allow/deny rules?
-
-Add a `httpd.conf` file and use the `A` and `D` directives:
+RUN adduser -D static
 
 ```
-A:172.20.         # Allow address from 172.20.0.0/16
-A:10.0.0.0/25     # Allow any address from 10.0.0.0-10.0.0.127
-A:127.0.0.1       # Allow local loopback connections
-D:*               # Deny from other IP connections
+
+
+#Get the content of webdevca1.1 from GitHub
+
+to get the content it was provided the github repository link
+
+```sh
+
+RUN wget https://github.com/Rodrigocct/webdevca1.1/archive/main.tar.gz \
+  && tar xf main.tar.gz \
+  && rm main.tar.gz \
+  && mv /webdevca1.1-main /home/static
 ```
 
-You can also allow all requests with some exceptions:
+# Change working directory
+
+
+
+```sh
+
+WORKDIR /busybox
 
 ```
-D:1.2.3.4
-D:5.6.7.8
-A:* # This line is optional
+
+# Install a custom version of BusyBox
+COPY .config .
+RUN make && make install
+
+# Switch to the scratch image
+FROM scratch
+
+EXPOSE 8080
+
+# Copy user and BusyBox
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /busybox/_install/bin/busybox /
+
+# Copy the content of webdevca1.1 to the scratch image
+COPY --from=builder /home/static /home/static
+
+# Switch to our non-root user and their work directory
+USER static
+
+WORKDIR /home/static/webdevca1.1-main
+
+# Uploads a blank default httpd.conf
+# This is only needed in order to set the `-c` argument in this base file
+# and save the developer the need to override the CMD line in case they ever
+# want to use a httpd.conf
+
+# httpd.conf
+COPY httpd.conf .
+
+
+# Issuing commands to run when container is created
+CMD ["/busybox", "httpd", "-f", "-v", "-p", "8080", "-c", "httpd.conf"]
+
+# After setting all
+
+by running the command below on the cmd comand prompt it is possible to Build the image:
+
+```sh
+docker build -t my-ca1-webdev .
 ```
+before running the command line make sure you are in the correct directory. 
+To access the directory where your file is located you can use cd followed by the address where your files are located
 
-### How can I use basic auth for some of my paths?
+# Run the image:
 
-Add a `httpd.conf` file, listing the paths that should be protected and the corresponding credentials:
+it can be done by running the next command line and providing the port number in this case is 8080
 
+```sh
+docker run -it --rm -p 8080:8080 my-ca1-webdev
 ```
-/admin:my-user:my-password # Require user my-user with password my-password whenever calling /admin
-```
+# to check if everyting went throug:
 
-### Where can I find the documentation for BusyBox httpd?
+Browse to `http://localhost:8080`.
 
-Read the [source code comments](https://git.busybox.net/busybox/tree/networking/httpd.c).
+
